@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SlabScout — card price guide</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#/"><span class="mark">S</span>SlabScout</a>
+  <form id="searchForm" class="search">
+    <select id="gameSel" aria-label="Game">
+      <option value="all">All games</option>
+      <option value="pokemon">Pokémon</option>
+      <option value="magic">Magic</option>
+      <option value="yugioh">Yu-Gi-Oh!</option>
+    </select>
+    <input id="q" type="search" placeholder="Search a card, e.g. Charizard" autocomplete="off" aria-label="Search cards">
+    <button type="submit">Search</button>
+  </form>
+  <nav>
+    <a href="#/scan" data-nav="scan">📸 Scan</a>
+    <a href="#/collection" data-nav="collection">📈 Collection</a>
+    <span id="acct" class="row"></span>
+  </nav>
+</header>
+<main id="app"></main>
+<footer>Prices from TCGplayer market data. SlabScout is an independent project and is not affiliated with any price guide, marketplace or grading company.</footer>
+<script src="/app.js"></script>
+</body>
+</html>
