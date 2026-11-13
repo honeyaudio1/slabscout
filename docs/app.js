@@ -1,5 +1,5 @@
 const app = document.getElementById('app');
-const GAME = { pokemon: 'Pokémon', magic: 'Magic', yugioh: 'Yu-Gi-Oh!' };
+const GAME = { pokemon: 'Pokémon', magic: 'Magic', yugioh: 'Yu-Gi-Oh!', sports: 'Sports' };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = v => v == null ? '—' : '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const signed = v => (v >= 0 ? '+' : '−') + money(Math.abs(v));
@@ -262,8 +262,9 @@ function chart(history) {
 }
 
 async function cardPage(id) {
-  loading('Loading card…');
+  loading(id.startsWith('sports:') ? 'Finding sold listings…' : 'Loading card…');
   try {
+    if (id.startsWith('sports:')) { document.getElementById('gameSel').value = 'sports'; document.getElementById('q').value = id.slice(7); document.getElementById('gameSel').onchange({ target: document.getElementById('gameSel') }); }
     const d = await api('/api/card?id=' + encodeURIComponent(id));
     const c = d.card, raw = d.values.Ungraded?.value;
     const order = d.grades.filter(g => d.values[g]).concat(Object.keys(d.values).filter(g => !d.grades.includes(g)).sort());
@@ -279,7 +280,8 @@ async function cardPage(id) {
         <span class="tag">${esc(GAME[c.game])}</span>
         <h1 style="margin-top:8px">${esc(c.name)}${c.number ? ` <span class="muted">#${esc(c.number)}</span>` : ''}</h1>
         <div class="muted">${[c.set, c.setCode, c.rarity, c.year].filter(Boolean).map(esc).join(' · ')}</div>
-        ${raw == null ? '<div class="notice">No market price is available for this printing.</div>' : ''}
+        ${raw == null ? `<div class="notice">${c.game === 'sports' ? (d.sales.length ? 'No ungraded sales found for this search; graded values are below.' : 'No sold listings matched this search. Try adding the year, set and card number.') : 'No market price is available for this printing.'}</div>` : ''}
+        ${c.game === 'sports' && d.sales.length ? '<div class="notice">Sports card values come from eBay sold listings matching your search text, so a precise search (year, set, player, card number, parallel) gives better numbers.</div>' : ''}
         <div class="tiles">${top.map(g => { const v = d.values[g]; return `<div class="tile ${g === 'Ungraded' ? 'main' : ''}">
           <div class="k">${esc(g)}</div><div class="v">${money(v.value)}</div>
           <div class="s">${g === 'Ungraded' ? esc(c.priceSource || '') : raw ? (v.value / raw).toFixed(1) + '× ungraded' : ''}</div><div class="s">${last(v)}</div></div>`; }).join('')}</div>
@@ -510,7 +512,12 @@ function route() {
 document.getElementById('searchForm').onsubmit = e => {
   e.preventDefault();
   const q = document.getElementById('q').value.trim();
-  if (q.length >= 2) location.hash = `#/search/${document.getElementById('gameSel').value}/${encodeURIComponent(q)}`;
+  const game = document.getElementById('gameSel').value;
+  if (game === 'sports') { if (q.length >= 3) location.hash = '#/card/' + encodeURIComponent('sports:' + q); return; }
+  if (q.length >= 2) location.hash = `#/search/${game}/${encodeURIComponent(q)}`;
+};
+document.getElementById('gameSel').onchange = e => {
+  document.getElementById('q').placeholder = e.target.value === 'sports' ? 'Year, set, player, number — e.g. 2018 Prizm Luka Doncic #280' : 'Search a card, e.g. Charizard';
 };
 window.addEventListener('hashchange', route);
 api('/api/me').then(r => { me = r.user; }).catch(() => {}).finally(() => { drawAccount(); route(); });

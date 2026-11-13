@@ -82,6 +82,7 @@
   }
   function getCard(id) {
     const [game, ...rest] = id.split(':');
+    if (game === 'sports') return Promise.reject(new Error('Sports card prices need the full app. This free version can only look up Pokémon, Magic and Yu-Gi-Oh! cards.'));
     return cached('card:' + id, async () => {
       if (game === 'pokemon') return pokemonFetch(rest.join(':'));
       if (game === 'magic') return magicCard(await getJson('https://api.scryfall.com/cards/' + encodeURIComponent(rest[0])));

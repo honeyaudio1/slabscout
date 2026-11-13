@@ -24,6 +24,8 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: COMPSAPI_KEY
+        sync: false
       - key: PRICECHARTING_TOKEN
         sync: false
       - key: EBAY_CLIENT_ID

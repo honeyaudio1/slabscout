@@ -4,6 +4,7 @@ Run:  .venv/bin/python server.py      then open http://localhost:8765
 
 Optional keys in a .env file next to this script:
   ANTHROPIC_API_KEY=...        enables card scanning (photo -> card + set)
+  COMPSAPI_KEY=...             real eBay sold listings for every card, and sports card lookups (compsapi.com)
   PRICECHARTING_TOKEN=...      real graded + ungraded values (paid PriceCharting API subscription)
   EBAY_CLIENT_ID=...           enables real eBay sold listings
   EBAY_CLIENT_SECRET=...       (needs eBay Marketplace Insights API access)
@@ -43,7 +44,7 @@ GRADES = ["Ungraded", "PSA 10", "PSA 9", "PSA 8", "PSA 7", "BGS 10", "BGS 9.5", 
           "CGC 10", "CGC 9.5", "CGC 9", "SGC 10", "SGC 9.5", "SGC 9", "TAG 10"]
 COMPANIES = {"PSA": "PSA", "BGS": "Beckett (BGS)", "CGC": "CGC", "SGC": "SGC", "TAG": "TAG", "ACE": "ACE",
              "ANY": "Any company"}
-GAME_LABEL = {"pokemon": "Pokemon", "magic": "Magic", "yugioh": "Yu-Gi-Oh"}
+GAME_LABEL = {"pokemon": "Pokemon", "magic": "Magic", "yugioh": "Yu-Gi-Oh", "sports": "Sports"}
 
 
 def load_env():
@@ -236,6 +237,11 @@ def get_card(card_id):
             return _pokemon_fetch(rest)
         if game == "magic":
             return _magic_card(get_json("https://api.scryfall.com/cards/" + urllib.parse.quote(rest)))
+        if game == "sports":  # no catalogue for sports cards: the id carries the search text
+            q = rest.strip()[:300]
+            return {"id": "sports:" + q, "game": "sports", "name": q, "set": "", "setCode": "", "number": "",
+                    "rarity": "", "year": "", "image": None, "imageLarge": None, "price": None,
+                    "priceSource": "Median of recent eBay sales"} if len(q) >= 3 else None
         if game == "yugioh":
             cid, _, code = rest.partition(":")
             data = get_json("https://db.ygoprodeck.com/api/v7/cardinfo.php?id=" + urllib.parse.quote(cid))["data"][0]
@@ -304,6 +310,58 @@ def ebay_sales(card):
         out.append({"date": (it.get("lastSoldDate") or "")[:10], "title": it.get("title"), "price": price,
                     "grade": parse_grade(it.get("title")), "url": it.get("itemWebUrl"), "source": "eBay"})
     return out
+
+
+def comps_enabled():
+    return bool(os.environ.get("COMPSAPI_KEY"))
+
+
+def _fmt_grade(g):
+    f = fnum(g)
+    return None if f is None else ("%g" % f)
+
+
+def comps_sales(query):
+    """Real eBay sold listings from CompsAPI. Results are kept in the database to save the monthly quota."""
+    key = query.strip().lower()
+    ttl = float(os.environ.get("COMPS_CACHE_HOURS") or 72) * 3600
+    rows = sql("SELECT fetched, data FROM comps_cache WHERE q=?", (key,))
+    if rows and time.time() - rows[0]["fetched"] < ttl:
+        return json.loads(rows[0]["data"])
+    url = "https://api.compsapi.com/v1/sold?" + urllib.parse.urlencode(
+        {"q": query[:300], "cards": 1, "days": 365, "size": 240, "exclude": "junk,lot"})
+    try:
+        data = get_json(url, {"X-API-Key": os.environ["COMPSAPI_KEY"]})
+    except urllib.error.HTTPError as e:
+        if rows:  # out of quota or temporarily down: an older copy beats nothing
+            return json.loads(rows[0]["data"])
+        raise RuntimeError({401: "the CompsAPI key was rejected", 403: "the CompsAPI key has expired",
+                            429: "the CompsAPI quota is used up for now"}.get(e.code, "CompsAPI returned %s" % e.code))
+    out = []
+    for it in data.get("items") or []:
+        price = fnum(it.get("price"))
+        if not price:
+            continue
+        c = it.get("card") or {}
+        grade = _fmt_grade(c.get("grade"))
+        if c.get("graded") and c.get("grader") and grade:
+            label = "%s %s" % (str(c["grader"]).upper().replace("BECKETT", "BGS"), grade)
+        else:
+            label = parse_grade(it.get("title"))
+        out.append({"date": str(it.get("last_sold") or "")[:10], "title": it.get("title"), "price": price,
+                    "grade": label, "url": it.get("url"), "image": it.get("image"), "source": "eBay"})
+    sql("INSERT OR REPLACE INTO comps_cache VALUES (?,?,?)", (key, time.time(), json.dumps(out)))
+    return out
+
+
+def full_card(card_id):
+    """get_card plus, for sports cards, the picture and raw value taken from their sold listings."""
+    card = get_card(card_id)
+    if card and card["game"] == "sports" and comps_enabled():
+        m = card_market(card)
+        img = next((s["image"] for s in m["sales"] if s.get("image")), None)
+        card = {**card, "image": img, "imageLarge": img, "price": (m["values"].get("Ungraded") or {}).get("value")}
+    return card
 
 
 GRADE_MULT = {"Ungraded": (1.0, 0),
@@ -402,7 +460,13 @@ def card_market(card):
                 errors.append("PriceCharting had no confident match for this card.")
         except Exception as e:
             errors.append("PriceCharting lookup failed (%s)." % e)
-    if ebay_enabled():
+    if comps_enabled():
+        try:
+            sales = [dict(x) for x in comps_sales(sales_query(card))]
+            sales_source = "ebay"
+        except Exception as e:
+            errors.append("Sold-listing lookup failed: %s." % e)
+    if sales_source != "ebay" and ebay_enabled():
         try:
             sales = cached(("ebay", card["id"]), 1800, lambda: ebay_sales(card))
             sales_source = "ebay"
@@ -557,6 +621,7 @@ def init_db():
         " cards INTEGER, PRIMARY KEY (user_id, day))",
         "CREATE TABLE IF NOT EXISTS scans (user_id INTEGER NOT NULL, day TEXT NOT NULL, n INTEGER NOT NULL,"
         " PRIMARY KEY (user_id, day))",
+        "CREATE TABLE IF NOT EXISTS comps_cache (q TEXT PRIMARY KEY, fetched REAL NOT NULL, data TEXT NOT NULL)",
         "CREATE TABLE IF NOT EXISTS resets (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires REAL NOT NULL)",
     ):
         sql(stmt)
@@ -792,18 +857,23 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/status":
                 has_key = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
                 return self.send_json({"scan": has_key, "ebay": ebay_enabled(), "priceGuide": bool(pc_token()),
-                                       "email": bool(os.environ.get("SMTP_HOST")),
+                                       "email": bool(os.environ.get("SMTP_HOST")), "sports": comps_enabled(),
                                        "inviteOnly": bool(os.environ.get("SIGNUP_CODE"))})
             if u.path == "/api/search":
                 q = (qs.get("q") or "").strip()
                 if len(q) < 2:
                     return self.send_json({"cards": [], "errors": []})
+                if qs.get("game") == "sports":
+                    return self.send_json({"cards": [], "errors": []})
                 cards, errors = search(q, qs.get("game", "all"))
                 return self.send_json({"cards": cards, "errors": errors})
             if u.path == "/api/card":
-                card = get_card(qs.get("id", ""))
+                card = full_card(qs.get("id", ""))
                 if not card:
                     return self.send_json({"error": "Card not found."}, 404)
+                if card["game"] == "sports" and not comps_enabled():
+                    return self.send_json({"error": "Sports card lookups are not set up yet: add COMPSAPI_KEY to "
+                                                    "the .env file and restart."}, 503)
                 return self.send_json({"card": card, "grades": GRADES, "companies": COMPANIES, **card_market(card)})
             if u.path == "/api/me":
                 return self.send_json({"user": user_from(self.headers)})
@@ -874,7 +944,7 @@ class Handler(BaseHTTPRequestHandler):
                                                "needsKey": True}, 503)
                     return self.send_json({"error": "Scan failed: %s" % e}, 502)
             if u.path == "/api/collection":
-                card = get_card(body.get("cardId", ""))
+                card = full_card(body.get("cardId", ""))
                 if not card:
                     return self.send_json({"error": "Card not found."}, 404)
                 item = {"entryId": uuid.uuid4().hex[:10], "card": card,
