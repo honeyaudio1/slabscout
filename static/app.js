@@ -57,13 +57,14 @@ function signInPage(mode) {
     <h1>${up ? 'Create your <span class="grad">account</span>' : 'Welcome <span class="grad">back</span>'}</h1>
     <p class="muted">${up ? 'Your collection and its growth chart are saved to your account.' : 'Sign in to see your collection.'}</p>
     <form id="authForm">
-      ${up ? '<label>Name<input name="name" autocomplete="name" maxlength="60" placeholder="What should we call you?"></label>' : ''}
+      ${up ? '<label>Name<input name="name" autocomplete="name" maxlength="60" placeholder="What should we call you?"></label><label id="codeRow" hidden>Invite code<input name="code" autocomplete="off"></label>' : ''}
       <label>Email<input name="email" type="email" autocomplete="email" required></label>
       <label>Password<input name="password" type="password" autocomplete="${up ? 'new-password' : 'current-password'}" minlength="${up ? 8 : 1}" required>${up ? '<small class="muted">At least 8 characters.</small>' : ''}</label>
       <div class="error" id="authErr"></div>
       <button class="btn primary">${up ? 'Create account' : 'Sign in'}</button>
     </form>
     <p class="muted">${up ? 'Already have an account? <a href="#/signin">Sign in</a>' : 'New here? <a href="#/signup">Create an account</a> · <a href="#/forgot">Forgot password?</a>'}</p></section>`;
+  if (up) api('/api/status').then(st => { const r = document.getElementById('codeRow'); if (r && st.inviteOnly) r.hidden = false; }).catch(() => {});
   document.getElementById('authForm').onsubmit = async e => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));

@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(ROOT, "static")
-DATA = os.path.join(ROOT, "data")
+DATA = os.environ.get("DATA_DIR") or os.path.join(ROOT, "data")
 PORT = int(os.environ.get("PORT", "8765"))
 HOST = os.environ.get("HOST", "127.0.0.1")  # set HOST=0.0.0.0 to reach the app from other devices on your network
 UA = "SlabScout/1.0"
@@ -555,6 +555,8 @@ def init_db():
         "CREATE TABLE IF NOT EXISTS items (entry_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, data TEXT NOT NULL)",
         "CREATE TABLE IF NOT EXISTS history (user_id INTEGER NOT NULL, day TEXT NOT NULL, value REAL, cost REAL,"
         " cards INTEGER, PRIMARY KEY (user_id, day))",
+        "CREATE TABLE IF NOT EXISTS scans (user_id INTEGER NOT NULL, day TEXT NOT NULL, n INTEGER NOT NULL,"
+        " PRIMARY KEY (user_id, day))",
         "CREATE TABLE IF NOT EXISTS resets (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires REAL NOT NULL)",
     ):
         sql(stmt)
@@ -564,7 +566,20 @@ def hash_password(password, salt):
     return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 600000).hex()
 
 
-def create_user(email, name, password):
+def count_scan(user_id):
+    """Counts one scan for today; False when the user is over the daily limit (scans cost API money)."""
+    today, limit = date.today().isoformat(), int(os.environ.get("SCANS_PER_DAY") or 25)
+    rows = sql("SELECT n FROM scans WHERE user_id=? AND day=?", (user_id, today))
+    if rows and rows[0]["n"] >= limit:
+        return False
+    sql("INSERT INTO scans VALUES (?,?,1) ON CONFLICT(user_id, day) DO UPDATE SET n = n + 1", (user_id, today))
+    return True
+
+
+def create_user(email, name, password, code=None):
+    want = os.environ.get("SIGNUP_CODE")
+    if want and not hmac.compare_digest((code or "").strip().encode(), want.encode()):
+        raise ValueError("That invite code is not right.")
     email = (email or "").strip().lower()
     name = (name or "").strip()[:60] or email.split("@")[0]
     if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email) or len(email) > 200:
@@ -648,7 +663,7 @@ def request_reset(email):
     token = secrets.token_urlsafe(32)
     sql("DELETE FROM resets WHERE user_id=? OR expires < ?", (rows[0]["id"], now))
     sql("INSERT INTO resets VALUES (?,?,?)", (_token_hash(token), rows[0]["id"], now + 3600))
-    base = (os.environ.get("APP_URL") or "http://localhost:%d" % PORT).rstrip("/")
+    base = (os.environ.get("APP_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "http://localhost:%d" % PORT).rstrip("/")
     send_reset_email(email, "%s/#/reset/%s" % (base, token))
 
 
@@ -777,7 +792,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/status":
                 has_key = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
                 return self.send_json({"scan": has_key, "ebay": ebay_enabled(), "priceGuide": bool(pc_token()),
-                                       "email": bool(os.environ.get("SMTP_HOST"))})
+                                       "email": bool(os.environ.get("SMTP_HOST")),
+                                       "inviteOnly": bool(os.environ.get("SIGNUP_CODE"))})
             if u.path == "/api/search":
                 q = (qs.get("q") or "").strip()
                 if len(q) < 2:
@@ -812,7 +828,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path in ("/api/signup", "/api/login"):
                 try:
                     if u.path == "/api/signup":
-                        uid = create_user(body.get("email"), body.get("name"), body.get("password"))
+                        uid = create_user(body.get("email"), body.get("name"), body.get("password"), body.get("code"))
                     else:
                         uid = check_login(body.get("email"), body.get("password"))
                 except ValueError as e:
@@ -843,6 +859,8 @@ class Handler(BaseHTTPRequestHandler):
             if not user:
                 return
             if u.path == "/api/scan":
+                if not count_scan(user["id"]):
+                    return self.send_json({"error": "You have reached today's scan limit. Try again tomorrow."}, 429)
                 try:
                     return self.send_json(scan(body.get("image")))
                 except ValueError as e:

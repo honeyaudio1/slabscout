@@ -22,6 +22,12 @@ Then open http://localhost:8765.
 To open it from a phone on the same Wi-Fi, start it with `HOST=0.0.0.0` and browse to
 `http://<your-computer's-IP>:8765`.
 
+## Host it online (Render)
+
+1. Open https://dashboard.render.com/blueprint/new and connect this repository.
+2. Render reads `render.yaml`, which sets up the web service and a disk for accounts and collections.
+3. Fill in the keys it asks for. Set `SIGNUP_CODE` to keep sign-up invite-only.
+
 ## Optional keys (`.env`)
 
 | Key | Enables |

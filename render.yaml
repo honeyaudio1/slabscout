@@ -1,0 +1,40 @@
+# Render blueprint: https://dashboard.render.com/blueprint/new
+services:
+  - type: web
+    name: slabscout
+    runtime: python
+    plan: starter            # a paid plan is needed for the persistent disk below
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    healthCheckPath: /api/status
+    disk:
+      name: slabscout-data   # accounts and collections live here and survive deploys
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATA_DIR
+        value: /var/data
+      - key: SECURE_COOKIES
+        value: "1"
+      - key: SIGNUP_CODE       # people need this code to create an account; delete it to open sign-up to everyone
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: PRICECHARTING_TOKEN
+        sync: false
+      - key: EBAY_CLIENT_ID
+        sync: false
+      - key: EBAY_CLIENT_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
