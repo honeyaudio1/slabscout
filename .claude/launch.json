@@ -1,1 +1,27 @@
-{"version":"0.0.1","configurations":[{"name":"slabscout","runtimeExecutable":".venv/bin/python","runtimeArgs":["server.py"],"port":8765}]}
+{
+ "version": "0.0.1",
+ "configurations": [
+  {
+   "name": "slabscout",
+   "runtimeExecutable": ".venv/bin/python",
+   "runtimeArgs": [
+    "server.py"
+   ],
+   "port": 8765
+  },
+  {
+   "name": "slabscout-pages",
+   "runtimeExecutable": "python3",
+   "runtimeArgs": [
+    "-m",
+    "http.server",
+    "8766",
+    "--bind",
+    "127.0.0.1",
+    "-d",
+    "docs"
+   ],
+   "port": 8766
+  }
+ ]
+}

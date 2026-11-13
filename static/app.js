@@ -9,6 +9,7 @@ let stream = null, me = null, afterSignIn = null;
 
 function drawAccount() {
   const el = document.getElementById('acct');
+  if (STATIC) { el.innerHTML = ''; return; }
   el.innerHTML = me ? `<span class="who" title="${esc(me.email)}">${esc(me.name)}</span><button class="btn small" id="outBtn">Sign out</button>`
     : '<a class="btn primary" href="#/signin">Sign in</a>';
   const out = document.getElementById('outBtn');
@@ -77,7 +78,9 @@ function signInPage(mode) {
   };
 }
 
+const STATIC = !!window.LOCAL_API; // GitHub Pages build: no server, data fetched in the browser
 async function api(path, opts) {
+  if (STATIC) return window.LOCAL_API(path, opts);
   const r = await fetch(path, opts);
   const j = await r.json().catch(() => ({ error: 'Bad response from server.' }));
   if (!r.ok) throw Object.assign(new Error(j.error || 'Request failed.'), j);
@@ -201,11 +204,12 @@ async function home() {
   const picks = ['Charizard', 'Pikachu', 'Umbreon', 'Black Lotus', 'Blue-Eyes White Dragon', 'Mewtwo', 'Rayquaza'];
   app.innerHTML = `<section class="hero">
     <h1>What's your collection<br><span class="grad">really worth?</span></h1>
-    <p>Look up any Pokémon, Magic or Yu-Gi-Oh! card, compare raw and graded values, or point your camera at a card and let it identify itself.</p>
+    <p>Look up any Pokémon, Magic or Yu-Gi-Oh! card, compare raw and graded values${STATIC ? ', and track what your collection is worth.' : ', or point your camera at a card and let it identify itself.'}</p>
     <div class="chips">${picks.map(p => `<a class="chip" href="#/search/all/${encodeURIComponent(p)}">${esc(p)}</a>`).join('')}</div></section>
     <div id="mini"></div>
     <div class="features">
-      <div class="panel"><span class="ico">📸</span><b>Scan a card</b><span class="muted">Snap a photo and get the card, set and number identified for you.</span><p><a class="btn primary" href="#/scan">Open scanner</a></p></div>
+      ${STATIC ? '<div class="panel"><span class="ico">🔎</span><b>Find any card</b><span class="muted">Search three games at once and sort by price, set or year.</span></div>'
+        : '<div class="panel"><span class="ico">📸</span><b>Scan a card</b><span class="muted">Snap a photo and get the card, set and number identified for you.</span><p><a class="btn primary" href="#/scan">Open scanner</a></p></div>'}
       <div class="panel"><span class="ico">💎</span><b>Raw vs graded</b><span class="muted">PSA, Beckett, CGC, SGC and TAG values side by side, with the multiple over raw.</span></div>
       <div class="panel"><span class="ico">📈</span><b>Watch it grow</b><span class="muted">Track every card you own and see your collection's value charted over time.</span><p><a class="btn" href="#/collection">My collection</a></p></div>
     </div>`;
@@ -356,6 +360,7 @@ async function cardPage(id) {
 function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
 
 function scanPage() {
+  if (STATIC) { app.innerHTML = '<section class="vault" style="text-align:center;padding:56px 24px"><div style="font-size:54px">📸</div><h1>Scanning is not in this version</h1><p class="muted">Card scanning needs the full app running on a server. Search by name instead.</p></section>'; return; }
   app.innerHTML = `<h1>Scan a <span class="grad">card</span></h1><p class="muted">Photograph the front of one card, filling the frame. Slabbed cards work too — the grade is read from the label.</p>
     <div id="keyNote">${me ? '' : '<div class="notice">Scanning needs an account. <a href="#/signin">Sign in</a> or <a href="#/signup">create one</a>.</div>'}</div>
     <div class="scanbox">
@@ -422,7 +427,7 @@ async function collectionPage() {
     if (!items.length) {
       app.innerHTML = `<section class="vault" style="text-align:center;padding:56px 24px"><div style="font-size:54px">🗃️</div>
         <h1>Your collection <span class="grad">starts here</span></h1><p class="muted">Search or scan a card, then tap “Add”. Its value is tracked from day one.</p>
-        <p><a class="btn primary" href="#/scan">Scan a card</a> <a class="btn" href="#/search/all/Charizard">Browse cards</a></p></section>`;
+        <p>${STATIC ? '' : '<a class="btn primary" href="#/scan">Scan a card</a> '}<a class="btn${STATIC ? ' primary' : ''}" href="#/search/all/Charizard">Browse cards</a></p></section>`;
       return;
     }
     const total = items.reduce((s, i) => s + (i.value || 0) * i.qty, 0);
@@ -444,7 +449,7 @@ async function collectionPage() {
         <div class="stat"><div class="k">Cost basis</div><div class="v">${costed.length ? money(cost) : '—'}</div></div>
         <div class="stat"><div class="k">👑 Top card</div><div class="v" title="${esc(best.card.name)}">${esc(best.card.name)} · ${money(best.value)}</div></div>
       </div></section>
-      <div class="row between"><h2>Your cards</h2><button class="btn" id="csv">Export CSV</button></div><div id="g"></div>`;
+      <div class="row between"><h2>Your cards${STATIC ? ' <small>· saved on this device only</small>' : ''}</h2><button class="btn" id="csv">Export CSV</button></div><div id="g"></div>`;
     countUp(document.getElementById('total'), total);
 
     const ranges = [['1W', 7], ['1M', 30], ['3M', 91], ['1Y', 365], ['All', 0]];

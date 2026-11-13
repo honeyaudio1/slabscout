@@ -22,6 +22,15 @@ Then open http://localhost:8765.
 To open it from a phone on the same Wi-Fi, start it with `HOST=0.0.0.0` and browse to
 `http://<your-computer's-IP>:8765`.
 
+## Free version on GitHub Pages
+
+The `docs/` folder is a no-server build: search, card pages and a collection saved in the browser.
+It has no accounts and no scanning. Rebuild it after changing anything in `static/`:
+
+```bash
+python3 build_pages.py
+```
+
 ## Host it online (Render)
 
 1. Open https://dashboard.render.com/blueprint/new and connect this repository.
